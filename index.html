@@ -3,89 +3,118 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Web歩数計 - ステップ2</title>
+    <title>Web歩数計 - 高精度版</title>
     <style>
         body { font-family: sans-serif; text-align: center; padding-top: 40px; background: #f4f7f6; color: #333; }
         .box { background: white; margin: 20px auto; padding: 20px; width: 80%; max-width: 300px; border-radius: 10px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
         .count { font-size: 5rem; font-weight: bold; color: #2ecc71; }
-        .value { font-size: 1.5rem; font-weight: bold; color: #34495e; }
+        .status { font-size: 1.1rem; color: #7f8c8d; font-weight: bold; }
         button { padding: 12px 24px; font-size: 1.1rem; cursor: pointer; background: #3498db; color: white; border: none; border-radius: 25px; margin: 10px; width: 150px; }
-        button:disabled { background: #bdc3c7; }
     </style>
 </head>
 <body>
 
-    <h1>マイ歩数計</h1>
+    <h1>高精度 歩数計</h1>
 
     <div class="box">
-        <p>現在の歩数</p>
+        <p>確定した歩数</p>
         <div class="count" id="stepCount">0</div>
-    </div>
-
-    <div class="box">
-        <p>全体の揺れの大きさ（合成加速度）</p>
-        <div id="totalAcc" class="value">0.00</div>
+        <div class="status" id="walkStatus">停止中</div>
     </div>
 
     <button id="requestBtn">計測開始</button>
     <button id="resetBtn" style="background: #e74c3c;">リセット</button>
 
     <script>
-        let stepCount = 0;
+        let totalSteps = 0;       // 画面に表示する確定歩数
+        let tempSteps = 0;        // 歩き始めの「仮」の歩数カウント
+        let isWalking = false;     // 本当に歩いているかどうかのフラグ
+
+        // ピーク検出用の変数
+        let lastAcc = 9.8;
+        let isRising = id = false;
         let lastStepTime = 0;
 
-        // 【要調整】この数値を超えたら「1歩」とみなす（しきい値）
-        const THRESHOLD = 17.0;
-        // 【要調整】1歩カウントしてから次の1歩を受け付けるまでの最小時間（ミリ秒）
-        const COOL_DOWN = 350;
+        // 【調整のキモ】
+        const THRESHOLD = 11.8;   // 歩行の山と認める最低の高さ（11.5〜12.5あたりで調整）
+        const MIN_INTERVAL = 300; // 1歩の最小間隔（ミリ秒）。早足でも0.3秒はかかる
+        const MAX_INTERVAL = 1200;// 1歩の最大間隔（ミリ秒）。これ以上空いたら「立ち止まった」とみなす
+        const REQUIRED_STEPS = 6; // 何歩連続で歩いたら本物と認めるか（JIS規格風）
 
         const requestBtn = document.getElementById('requestBtn');
         const resetBtn = document.getElementById('resetBtn');
         const stepCountDisplay = document.getElementById('stepCount');
-        const totalAccDisplay = document.getElementById('totalAcc');
+        const walkStatusDisplay = document.getElementById('walkStatus');
 
         requestBtn.addEventListener('click', async () => {
             if (typeof DeviceMotionEvent !== 'undefined' && typeof DeviceMotionEvent.requestPermission === 'function') {
                 try {
                     const permissionState = await DeviceMotionEvent.requestPermission();
-                    if (permissionState === 'granted') {
-                        startTracking();
-                    } else { alert('許可が拒否されました'); }
-                } catch (e) { alert('エラー: ' + e); }
-            } else {
-                startTracking();
-            }
+                    if (permissionState === 'granted') startTracking();
+                } catch (e) { alert(e); }
+            } else { startTracking(); }
         });
 
         function startTracking() {
             requestBtn.textContent = "計測中...";
             requestBtn.disabled = true;
+            walkStatusDisplay.textContent = "歩行待機中";
 
             window.addEventListener('devicemotion', (event) => {
                 if (!event.accelerationIncludingGravity) return;
-
                 const acc = event.accelerationIncludingGravity;
+                const currentAcc = Math.sqrt(acc.x * acc.x + acc.y * acc.y + acc.z * acc.z);
 
-                // 3軸のベクトルを合成（三平方の定理）
-                const totalAcc = Math.sqrt(acc.x * acc.x + acc.y * acc.y + acc.z * acc.z);
-
-                // 画面に現在の揺れの大きさを表示
-                totalAccDisplay.textContent = totalAcc.toFixed(2);
-
-                // 条件①：揺れの大きさが「しきい値」を超えたか
-                // 条件②：前回のカウントから350ミリ秒（0.35秒）以上経っているか（チャタリング防止）
                 const currentTime = Date.now();
-                if (totalAcc > THRESHOLD && (currentTime - lastStepTime) > COOL_DOWN) {
-                    stepCount++;
-                    stepCountDisplay.textContent = stepCount;
-                    lastStepTime = currentTime; // 時間を更新
+
+                // 最後の一歩から時間が経ちすぎていたら、歩行状態をリセット
+                if (currentTime - lastStepTime > MAX_INTERVAL) {
+                    tempSteps = 0;
+                    isWalking = false;
+                    walkStatusDisplay.textContent = "停止中";
+                    walkStatusDisplay.style.color = "#7f8c8d";
                 }
+
+                // --- ピーク（波の頂点）の検出ロジック ---
+                // 値が「上がって、下がった」の反転ポイントを見つける
+                if (currentAcc < lastAcc && isRising) {
+                    // かつ、その頂点が「しきい値」を超えており、前回の1歩から適切な時間が経っているか
+                    if (lastAcc > THRESHOLD && (currentTime - lastStepTime) > MIN_INTERVAL) {
+
+                        tempSteps++; // まず仮カウントを増やす
+                        lastStepTime = currentTime;
+
+                        if (!isWalking) {
+                            // まだ歩行状態になっていない場合
+                            walkStatusDisplay.textContent = `判定中... (${tempSteps}/${REQUIRED_STEPS})`;
+
+                            // 規定歩数（6歩）連続で歩いたら、本物の歩行と認定！
+                            if (tempSteps >= REQUIRED_STEPS) {
+                                isWalking = true;
+                                totalSteps += tempSteps; // 溜まっていた仮歩数を一気に足す
+                                stepCountDisplay.textContent = totalSteps;
+                                walkStatusDisplay.textContent = "🏃‍♂️ 歩行中！";
+                                walkStatusDisplay.style.color = "#2ecc71";
+                            }
+                        } else {
+                            // すでに歩行状態なら、リアルタイムで1歩ずつ増やす
+                            totalSteps++;
+                            stepCountDisplay.textContent = totalSteps;
+                        }
+                    }
+                    isRising = false;
+                } else if (currentAcc > lastAcc) {
+                    isRising = true;
+                }
+
+                lastAcc = currentAcc; // 前回の値を保存
             });
         }
 
         resetBtn.addEventListener('click', () => {
-            stepCount = 0;
-            stepCountDisplay.textContent = stepCount;
+            totalSteps = 0; tempSteps = 0; isWalking = false;
+            stepCountDisplay.textContent = 0;
+            walkStatusDisplay.textContent = "停止中";
         });
     </script>
 </body>
