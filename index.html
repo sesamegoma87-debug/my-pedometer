@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Web歩数計 - カロリー・食べ物換算版</title>
+    <title>Web歩数計 - 高精度＆カロリー換算版</title>
     <style>
         :root { --primary: #3498db; --success: #2ecc71; --danger: #e74c3c; --warning: #f1c40f; --dark: #2c3e50; --bg: #f8f9fa; }
         body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; text-align: center; background: var(--bg); color: var(--dark); margin: 0; padding: 20px 0; }
@@ -13,7 +13,7 @@
         .distance { font-size: 2.5rem; font-weight: bold; color: var(--primary); line-height: 1.2; }
         .calorie { font-size: 2.5rem; font-weight: bold; color: var(--danger); line-height: 1.2; }
         .food-text { font-size: 1.2rem; font-weight: bold; color: #d35400; margin-top: 10px; }
-        .status { font-size: 1rem; color: #7f8c8d; font-weight: bold; margin-top: 5px; }
+        .status { font-size: 1rem; color: #7f8c8d; font-weight: bold; margin-top: 5px; min-height: 1.2rem; }
 
         label { display: block; margin: 10px 0 5px; font-weight: bold; text-align: left; font-size: 0.85rem; color: #555; }
         input { width: 100%; padding: 10px; font-size: 1rem; border: 1px solid #ccc; border-radius: 6px; text-align: center; box-sizing: border-box; }
@@ -89,11 +89,15 @@
         let isRising = false;
         let lastStepTime = 0;
 
-        // あなたが調整してくれた黄金比の数値！
+        // 【チューニング値】あなたが調整してくれた黄金比
         const THRESHOLD = 15;
         const MIN_INTERVAL = 500;
         const MAX_INTERVAL = 1400;
         const REQUIRED_STEPS = 5;
+
+        // 【新設】5歩連続の振動にかかる「最低の時間限界（ミリ秒）」
+        const MIN_TOTAL_TIME = 2000;
+        let stepTimes = []; // 各一歩の時刻を記録しておくための配列
 
         // UI要素
         const heightInput = document.getElementById('heightInput');
@@ -123,11 +127,13 @@
             displayHistory();
         });
 
+        // 身長から歩幅を自動計算
         heightInput.addEventListener('input', () => {
             const height = parseFloat(heightInput.value);
             if (!isNaN(height)) { strideInput.value = Math.round(height * 0.45); }
         });
 
+        // 設定の保存
         saveSettingBtn.addEventListener('click', () => {
             localStorage.setItem('user_height', heightInput.value);
             localStorage.setItem('user_stride', strideInput.value);
@@ -153,20 +159,17 @@
             const calories = weight * totalSteps * 0.0005 * 1.05;
             calorieDisplay.textContent = calories.toFixed(1) + " kcal";
 
-            // ③ 食べ物換算ロジック
+            // ③ 食べ物換算
             updateFoodExchange(calories);
         }
 
+        // 食べ物への自動換算
         function updateFoodExchange(calories) {
             if (calories === 0) {
                 foodDisplay.textContent = "消費した食べ物: まだありません";
                 return;
             }
 
-            // 食べ物のカロリー定義
-            const foodTarget = { name: "おにぎり", kcal: 200, icon: "🍙" };
-
-            // カロリー量に応じて食べ物をステップアップさせる
             let currentFood = { name: "イチゴ", kcal: 5, icon: "🍓" };
             if (calories >= 200) { currentFood = { name: "おにぎり", kcal: 200, icon: "🍙" }; }
             else if (calories >= 140) { currentFood = { name: "缶ビール", kcal: 140, icon: "🍺" }; }
@@ -192,17 +195,18 @@
                 calories: calories
             };
 
-            let history = JSON.parse(localStorage.getItem('pedometer_history2')) || [];
+            let history = JSON.parse(localStorage.getItem('pedometer_history3')) || [];
             history.unshift(newRecord);
-            localStorage.setItem('pedometer_history2', JSON.stringify(history));
+            localStorage.setItem('pedometer_history3', JSON.stringify(history));
 
             alert('記録を保存しました！');
             displayHistory();
         });
 
+        // 履歴表示
         function displayHistory() {
             historyList.innerHTML = '';
-            const history = JSON.parse(localStorage.getItem('pedometer_history2')) || [];
+            const history = JSON.parse(localStorage.getItem('pedometer_history3')) || [];
 
             if (history.length === 0) {
                 historyList.innerHTML = '<p style="color:#95a5a6; text-align:center;">記録がありません</p>';
@@ -225,12 +229,12 @@
 
         clearHistoryBtn.addEventListener('click', () => {
             if (confirm('すべての履歴を削除しますか？')) {
-                localStorage.removeItem('pedometer_history2');
+                localStorage.removeItem('pedometer_history3');
                 displayHistory();
             }
         });
 
-        // --- センサー計測ロジック ---
+        // --- 加速度センサー計測ロジック ---
         requestBtn.addEventListener('click', async () => {
             if (typeof DeviceMotionEvent !== 'undefined' && typeof DeviceMotionEvent.requestPermission === 'function') {
                 try {
@@ -251,27 +255,45 @@
                 const currentAcc = Math.sqrt(acc.x * acc.x + acc.y * acc.y + acc.z * acc.z);
                 const currentTime = Date.now();
 
+                // 立ち止まり判定
                 if (currentTime - lastStepTime > MAX_INTERVAL) {
                     tempSteps = 0;
+                    stepTimes = [];
                     isWalking = false;
                     walkStatusDisplay.textContent = "停止中";
                     walkStatusDisplay.style.color = "#7f8c8d";
                 }
 
+                // ピーク検出
                 if (currentAcc < lastAcc && isRising) {
                     if (lastAcc > THRESHOLD && (currentTime - lastStepTime) > MIN_INTERVAL) {
+
                         tempSteps++;
+                        stepTimes.push(currentTime);
                         lastStepTime = currentTime;
 
                         if (!isWalking) {
                             walkStatusDisplay.textContent = `判定中... (${tempSteps}/${REQUIRED_STEPS})`;
+
                             if (tempSteps >= REQUIRED_STEPS) {
-                                isWalking = true;
-                                totalSteps += tempSteps;
-                                stepCountDisplay.textContent = totalSteps;
-                                walkStatusDisplay.textContent = "🏃‍♂️ 歩行中！";
-                                walkStatusDisplay.style.color = "#2ecc71";
-                                updateCalculations();
+                                // 5歩の合計時間を計算
+                                const totalDuration = stepTimes[stepTimes.length - 1] - stepTimes[0];
+
+                                if (totalDuration >= MIN_TOTAL_TIME) {
+                                    // 2.0秒以上（正常な歩行）なら合格！
+                                    isWalking = true;
+                                    totalSteps += tempSteps;
+                                    stepCountDisplay.textContent = totalSteps;
+                                    walkStatusDisplay.textContent = "🏃‍♂️ 歩行中！";
+                                    walkStatusDisplay.style.color = "#2ecc71";
+                                    updateCalculations();
+                                } else {
+                                    // 2.0秒未満（早すぎる高速振動）なら手振りとみなしてリセット
+                                    walkStatusDisplay.textContent = "⚠️ 高速な手振りを検出（無視）";
+                                    walkStatusDisplay.style.color = "#e74c3c";
+                                    tempSteps = 0;
+                                    stepTimes = [];
+                                }
                             }
                         } else {
                             totalSteps++;
@@ -288,7 +310,7 @@
         }
 
         resetBtn.addEventListener('click', () => {
-            totalSteps = 0; tempSteps = 0; isWalking = false;
+            totalSteps = 0; tempSteps = 0; isWalking = false; stepTimes = [];
             stepCountDisplay.textContent = 0;
             walkStatusDisplay.textContent = "停止中";
             updateCalculations();
