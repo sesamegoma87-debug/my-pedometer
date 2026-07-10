@@ -3,20 +3,26 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Web歩数計 - 高精度＆カロリー換算版</title>
+    <title>Web歩数計 - 鉄道シミュレーター版</title>
     <style>
-        :root { --primary: #3498db; --success: #2ecc71; --danger: #e74c3c; --warning: #f1c40f; --dark: #2c3e50; --bg: #f8f9fa; }
+        :root { --primary: #3498db; --success: #2ecc71; --danger: #e74c3c; --warning: #f1c40f; --dark: #2c3e50; --bg: #f8f9fa; --train: #8cbb26; }
         body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; text-align: center; background: var(--bg); color: var(--dark); margin: 0; padding: 20px 0; }
         .box { background: white; margin: 15px auto; padding: 20px; width: 85%; max-width: 360px; border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.08); box-sizing: border-box; }
 
         .count { font-size: 3.5rem; font-weight: bold; color: var(--success); line-height: 1.2; }
         .distance { font-size: 2.5rem; font-weight: bold; color: var(--primary); line-height: 1.2; }
-        .calorie { font-size: 2.5rem; font-weight: bold; color: var(--danger); line-height: 1.2; }
-        .food-text { font-size: 1.2rem; font-weight: bold; color: #d35400; margin-top: 10px; }
+        .calorie { font-size: 2.2rem; font-weight: bold; color: var(--danger); line-height: 1.2; }
+        .food-text { font-size: 1.1rem; font-weight: bold; color: #d35400; margin-top: 5px; }
         .status { font-size: 1rem; color: #7f8c8d; font-weight: bold; margin-top: 5px; min-height: 1.2rem; }
 
+        /* 鉄道エリアのスタイル */
+        .train-station { font-size: 1.4rem; font-weight: bold; color: var(--train); margin: 10px 0; }
+        .train-next { font-size: 1rem; color: #7f8c8d; font-weight: bold; }
+        .train-route-bar { height: 8px; background: #e0e0e0; border-radius: 4px; margin: 15px 0 5px 0; overflow: hidden; position: relative; }
+        .train-route-fill { height: 100%; background: var(--train); width: 0%; transition: 0.3s; }
+
         label { display: block; margin: 10px 0 5px; font-weight: bold; text-align: left; font-size: 0.85rem; color: #555; }
-        input { width: 100%; padding: 10px; font-size: 1rem; border: 1px solid #ccc; border-radius: 6px; text-align: center; box-sizing: border-box; }
+        input, select { width: 100%; padding: 10px; font-size: 1rem; border: 1px solid #ccc; border-radius: 6px; text-align: center; box-sizing: border-box; background: white; }
 
         button { padding: 12px 20px; font-size: 1rem; font-weight: bold; cursor: pointer; color: white; border: none; border-radius: 25px; margin: 6px; width: 140px; transition: 0.2s; }
         button:active { transform: scale(0.98); }
@@ -26,7 +32,7 @@
         .btn-save { background: #f39c12; }
         .btn-setting { background: var(--success); }
 
-        .history-list { text-align: left; margin-top: 15px; max-height: 150px; overflow-y: auto; }
+        .history-list { text-align: left; margin-top: 15px; max-height: 120px; overflow-y: auto; }
         .history-item { border-bottom: 1px solid #eee; padding: 8px 0; font-size: 0.9rem; }
         .history-date { font-weight: bold; color: #7f8c8d; }
         .history-data { display: flex; justify-content: space-between; margin-top: 4px; }
@@ -34,7 +40,7 @@
 </head>
 <body>
 
-    <h1>歩数 ＆ 健康メーター</h1>
+    <h1>歩数 ＆ 鉄道メーター</h1>
 
     <div class="box">
         <h3 style="margin: 0 0 10px 0;">🏃‍♂️ 個人設定</h3>
@@ -44,10 +50,29 @@
         <label for="strideInput">歩幅 (cm):</label>
         <input type="number" id="strideInput" value="76">
 
-        <label for="weightInput">体重 (kg) ※カロリー計算用:</label>
+        <label for="weightInput">体重 (kg):</label>
         <input type="number" id="weightInput" value="60">
 
+        <label for="startStationSelect">出発駅を選択（山手線内回り）:</label>
+        <select id="startStationSelect">
+            <option value="0">東京</option>
+            <option value="1">有楽町</option>
+            <option value="2">新橋</option>
+            <option value="3">浜松町</option>
+            <option value="4">田町</option>
+            <option value="5">高輪ゲートウェイ</option>
+        </select>
+
         <button id="saveSettingBtn" class="btn-wide btn-setting">設定を保存</button>
+    </div>
+
+    <div class="box" style="border: 2px solid var(--train);">
+        <p style="margin:0; color:#7f8c8d; font-size: 0.9rem; font-weight: bold;">🚃 現在のトレイン位置</p>
+        <div class="train-station" id="currentStationDisplay">東京駅</div>
+        <div class="train-next" id="nextStationDisplay">次の駅: 有楽町駅 まで あと 800m</div>
+        <div class="train-route-bar">
+            <div class="train-route-fill" id="routeBarFill"></div>
+        </div>
     </div>
 
     <div class="box">
@@ -84,25 +109,34 @@
         let totalSteps = 0;
         let tempSteps = 0;
         let isWalking = false;
-
         let lastAcc = 9.8;
         let isRising = false;
         let lastStepTime = 0;
 
-        // 【チューニング値】あなたが調整してくれた黄金比
+        // あなたが調整してくれた黄金比 ＆ 手振りフィルター
         const THRESHOLD = 15;
         const MIN_INTERVAL = 500;
         const MAX_INTERVAL = 1400;
         const REQUIRED_STEPS = 5;
-
-        // 【新設】5歩連続の振動にかかる「最低の時間限界（ミリ秒）」
         const MIN_TOTAL_TIME = 2000;
-        let stepTimes = []; // 各一歩の時刻を記録しておくための配列
+        let stepTimes = [];
+
+        // 🌟 駅データ（東京駅からの通算キロ数）
+        const stations = [
+            { name: "東京駅", distance: 0.0 },
+            { name: "有楽町駅", distance: 0.8 },
+            { name: "新橋駅", distance: 1.9 },
+            { name: "浜松町駅", distance: 3.1 },
+            { name: "田町駅", distance: 4.6 },
+            { name: "高輪ゲートウェイ駅", distance: 5.9 },
+            { name: "品川駅", distance: 6.8 }
+        ];
 
         // UI要素
         const heightInput = document.getElementById('heightInput');
         const strideInput = document.getElementById('strideInput');
         const weightInput = document.getElementById('weightInput');
+        const startStationSelect = document.getElementById('startStationSelect');
         const saveSettingBtn = document.getElementById('saveSettingBtn');
         const requestBtn = document.getElementById('requestBtn');
         const resetBtn = document.getElementById('resetBtn');
@@ -115,39 +149,40 @@
         const historyList = document.getElementById('historyList');
         const clearHistoryBtn = document.getElementById('clearHistoryBtn');
 
-        // 起動時の読み込み
-        window.addEventListener('DOMContentLoaded', () => {
-            const savedHeight = localStorage.getItem('user_height');
-            const savedStride = localStorage.getItem('user_stride');
-            const savedWeight = localStorage.getItem('user_weight');
-            if (savedHeight) heightInput.value = savedHeight;
-            if (savedStride) strideInput.value = savedStride;
-            if (savedWeight) weightInput.value = savedWeight;
+        // 鉄道UI要素
+        const currentStationDisplay = document.getElementById('currentStationDisplay');
+        const nextStationDisplay = document.getElementById('nextStationDisplay');
+        const routeBarFill = document.getElementById('routeBarFill');
 
+        window.addEventListener('DOMContentLoaded', () => {
+            if (localStorage.getItem('user_height')) heightInput.value = localStorage.getItem('user_height');
+            if (localStorage.getItem('user_stride')) strideInput.value = localStorage.getItem('user_stride');
+            if (localStorage.getItem('user_weight')) weightInput.value = localStorage.getItem('user_weight');
+            if (localStorage.getItem('start_station_idx')) startStationSelect.value = localStorage.getItem('start_station_idx');
             displayHistory();
+            updateCalculations();
         });
 
-        // 身長から歩幅を自動計算
         heightInput.addEventListener('input', () => {
             const height = parseFloat(heightInput.value);
             if (!isNaN(height)) { strideInput.value = Math.round(height * 0.45); }
         });
 
-        // 設定の保存
         saveSettingBtn.addEventListener('click', () => {
             localStorage.setItem('user_height', heightInput.value);
             localStorage.setItem('user_stride', strideInput.value);
             localStorage.setItem('user_weight', weightInput.value);
-            alert('設定を保存しました！');
+            localStorage.setItem('start_station_idx', startStationSelect.value);
+            alert('設定と出発駅を保存しました！');
             updateCalculations();
         });
 
-        // --- 距離・カロリー・食べ物の総合計算ロジック ---
+        // --- 距離・カロリー・鉄道位置の総合計算 ---
         function updateCalculations() {
             const stride = parseFloat(strideInput.value) || 70;
             const weight = parseFloat(weightInput.value) || 60;
 
-            // ① 距離計算
+            // ① 距離計算 (メートル)
             const distanceM = (totalSteps * stride) / 100;
             if (distanceM >= 1000) {
                 distanceDisplay.textContent = (distanceM / 1000).toFixed(2) + " km";
@@ -155,83 +190,100 @@
                 distanceDisplay.textContent = distanceM.toFixed(1) + " m";
             }
 
-            // ② カロリー計算 (簡易式: 体重 * 歩数 * 0.0005 * 1.05)
+            // ② カロリー計算
             const calories = weight * totalSteps * 0.0005 * 1.05;
             calorieDisplay.textContent = calories.toFixed(1) + " kcal";
-
-            // ③ 食べ物換算
             updateFoodExchange(calories);
+
+            // 🌟 ③ 鉄道位置シミュレーション計算
+            calculateTrainPosition(distanceM);
         }
 
-        // 食べ物への自動換算
-        function updateFoodExchange(calories) {
-            if (calories === 0) {
-                foodDisplay.textContent = "消費した食べ物: まだありません";
-                return;
+        // 🌟 鉄道の現在地計算ロジック
+        function calculateTrainPosition(walkDistanceM) {
+            const startIdx = parseInt(startStationSelect.value) || 0;
+            const startStationObj = stations[startIdx];
+
+            // 「出発駅の元の位置」に「歩いた距離(km)」をプラスする
+            const currentTotalKm = startStationObj.distance + (walkDistanceM / 1000);
+
+            let currentStationName = "終点到達！";
+            let nextStationText = "品川駅より先は次のアップデートをお楽しみに！";
+            let progressPercent = 100;
+
+            // 駅リストをループして、今自分がどの駅間にいるかを探す
+            for (let i = startIdx; i < stations.length - 1; i++) {
+                const thisSt = stations[i];
+                const nextSt = stations[i + 1];
+
+                if (currentTotalKm >= thisSt.distance && currentTotalKm < nextSt.distance) {
+                    currentStationName = thisSt.name + " を通過";
+
+                    // 次の駅までの残りメートル数
+                    const remainingM = Math.round((nextSt.distance - currentTotalKm) * 1000);
+                    nextStationText = `次の駅: ${nextSt.name} まで あと ${remainingM}m`;
+
+                    // 駅間の進捗率をゲージに反映
+                    const sectionTotalDist = nextSt.distance - thisSt.distance;
+                    const sectionWalkedDist = currentTotalKm - thisSt.distance;
+                    progressPercent = (sectionWalkedDist / sectionTotalDist) * 100;
+                    break;
+                }
             }
 
+            // 最後の駅（品川）を超えた場合
+            if (currentTotalKm >= stations[stations.length - 1].distance) {
+                currentStationName = stations[stations.length - 1].name + " に到着！ 🎉";
+                nextStationText = "おめでとうございます！全駅制覇！";
+                progressPercent = 100;
+            }
+
+            // 画面表示を更新
+            currentStationDisplay.textContent = currentStationName;
+            nextStationDisplay.textContent = nextStationText;
+            routeBarFill.style.width = progressPercent + "%";
+        }
+
+        function updateFoodExchange(calories) {
+            if (calories === 0) { foodDisplay.textContent = "消費した食べ物: まだありません"; return; }
             let currentFood = { name: "イチゴ", kcal: 5, icon: "🍓" };
             if (calories >= 200) { currentFood = { name: "おにぎり", kcal: 200, icon: "🍙" }; }
             else if (calories >= 140) { currentFood = { name: "缶ビール", kcal: 140, icon: "🍺" }; }
             else if (calories >= 80) { currentFood = { name: "バナナ", kcal: 80, icon: "🍌" }; }
             else if (calories >= 40) { currentFood = { name: "クッキー", kcal: 40, icon: "🍪" }; }
-
             const count = (calories / currentFood.kcal).toFixed(1);
             foodDisplay.textContent = `消費換算: ${currentFood.icon}${currentFood.name} 約 ${count} 個分`;
         }
 
-        // --- 記録の保存処理 ---
+        // --- 保存・履歴系はそのまま維持 ---
         saveRecordBtn.addEventListener('click', () => {
             if (totalSteps === 0) { alert('まだ歩数が0です。'); return; }
-
             const now = new Date();
             const dateStr = `${now.getFullYear()}/${now.getMonth()+1}/${now.getDate()} ${now.getHours()}:${String(now.getMinutes()).padStart(2,'0')}`;
             const weight = parseFloat(weightInput.value) || 60;
             const calories = (weight * totalSteps * 0.0005 * 1.05).toFixed(1);
-
-            const newRecord = {
-                date: dateStr,
-                steps: totalSteps,
-                calories: calories
-            };
-
-            let history = JSON.parse(localStorage.getItem('pedometer_history3')) || [];
+            const newRecord = { date: dateStr, steps: totalSteps, calories: calories };
+            let history = JSON.parse(localStorage.getItem('pedometer_history_train')) || [];
             history.unshift(newRecord);
-            localStorage.setItem('pedometer_history3', JSON.stringify(history));
-
+            localStorage.setItem('pedometer_history_train', JSON.stringify(history));
             alert('記録を保存しました！');
             displayHistory();
         });
 
-        // 履歴表示
         function displayHistory() {
             historyList.innerHTML = '';
-            const history = JSON.parse(localStorage.getItem('pedometer_history3')) || [];
-
-            if (history.length === 0) {
-                historyList.innerHTML = '<p style="color:#95a5a6; text-align:center;">記録がありません</p>';
-                return;
-            }
-
+            const history = JSON.parse(localStorage.getItem('pedometer_history_train')) || [];
+            if (history.length === 0) { historyList.innerHTML = '<p style="color:#95a5a6; text-align:center;">記録がありません</p>'; return; }
             history.forEach(item => {
                 const itemEl = document.createElement('div');
                 itemEl.className = 'history-item';
-                itemEl.innerHTML = `
-                    <div class="history-date">${item.date}</div>
-                    <div class="history-data">
-                        <span><strong>${item.steps}</strong> 歩</span>
-                        <span style="color:var(--danger);">${item.calories} kcal</span>
-                    </div>
-                `;
+                itemEl.innerHTML = `<div class="history-date">${item.date}</div><div class="history-data"><span><strong>${item.steps}</strong> 歩</span><span style="color:var(--danger);">${item.calories} kcal</span></div>`;
                 historyList.appendChild(itemEl);
             });
         }
 
         clearHistoryBtn.addEventListener('click', () => {
-            if (confirm('すべての履歴を削除しますか？')) {
-                localStorage.removeItem('pedometer_history3');
-                displayHistory();
-            }
+            if (confirm('すべての履歴を削除しますか？')) { localStorage.removeItem('pedometer_history_train'); displayHistory(); }
         });
 
         // --- 加速度センサー計測ロジック ---
@@ -245,75 +297,36 @@
         });
 
         function startTracking() {
-            requestBtn.textContent = "計測中...";
-            requestBtn.disabled = true;
-            walkStatusDisplay.textContent = "歩行待機中";
-
+            requestBtn.textContent = "計測中..."; requestBtn.disabled = true; walkStatusDisplay.textContent = "歩行待機中";
             window.addEventListener('devicemotion', (event) => {
                 if (!event.accelerationIncludingGravity) return;
                 const acc = event.accelerationIncludingGravity;
                 const currentAcc = Math.sqrt(acc.x * acc.x + acc.y * acc.y + acc.z * acc.z);
                 const currentTime = Date.now();
 
-                // 立ち止まり判定
-                if (currentTime - lastStepTime > MAX_INTERVAL) {
-                    tempSteps = 0;
-                    stepTimes = [];
-                    isWalking = false;
-                    walkStatusDisplay.textContent = "停止中";
-                    walkStatusDisplay.style.color = "#7f8c8d";
-                }
+                if (currentTime - lastStepTime > MAX_INTERVAL) { tempSteps = 0; stepTimes = []; isWalking = false; walkStatusDisplay.textContent = "停止中"; walkStatusDisplay.style.color = "#7f8c8d"; }
 
-                // ピーク検出
                 if (currentAcc < lastAcc && isRising) {
                     if (lastAcc > THRESHOLD && (currentTime - lastStepTime) > MIN_INTERVAL) {
-
-                        tempSteps++;
-                        stepTimes.push(currentTime);
-                        lastStepTime = currentTime;
-
+                        tempSteps++; stepTimes.push(currentTime); lastStepTime = currentTime;
                         if (!isWalking) {
                             walkStatusDisplay.textContent = `判定中... (${tempSteps}/${REQUIRED_STEPS})`;
-
                             if (tempSteps >= REQUIRED_STEPS) {
-                                // 5歩の合計時間を計算
                                 const totalDuration = stepTimes[stepTimes.length - 1] - stepTimes[0];
-
                                 if (totalDuration >= MIN_TOTAL_TIME) {
-                                    // 2.0秒以上（正常な歩行）なら合格！
-                                    isWalking = true;
-                                    totalSteps += tempSteps;
-                                    stepCountDisplay.textContent = totalSteps;
-                                    walkStatusDisplay.textContent = "🏃‍♂️ 歩行中！";
-                                    walkStatusDisplay.style.color = "#2ecc71";
-                                    updateCalculations();
-                                } else {
-                                    // 2.0秒未満（早すぎる高速振動）なら手振りとみなしてリセット
-                                    walkStatusDisplay.textContent = "⚠️ 高速な手振りを検出（無視）";
-                                    walkStatusDisplay.style.color = "#e74c3c";
-                                    tempSteps = 0;
-                                    stepTimes = [];
-                                }
+                                    isWalking = true; totalSteps += tempSteps; stepCountDisplay.textContent = totalSteps; walkStatusDisplay.textContent = "🏃‍♂️ 歩行中！"; walkStatusDisplay.style.color = "#2ecc71"; updateCalculations();
+                                } else { walkStatusDisplay.textContent = "⚠️ 高速な手振りを検出（無視）"; walkStatusDisplay.style.color = "#e74c3c"; tempSteps = 0; stepTimes = []; }
                             }
-                        } else {
-                            totalSteps++;
-                            stepCountDisplay.textContent = totalSteps;
-                            updateCalculations();
-                        }
+                        } else { totalSteps++; stepCountDisplay.textContent = totalSteps; updateCalculations(); }
                     }
                     isRising = false;
-                } else if (currentAcc > lastAcc) {
-                    isRising = true;
-                }
+                } else if (currentAcc > lastAcc) { isRising = true; }
                 lastAcc = currentAcc;
             });
         }
 
         resetBtn.addEventListener('click', () => {
-            totalSteps = 0; tempSteps = 0; isWalking = false; stepTimes = [];
-            stepCountDisplay.textContent = 0;
-            walkStatusDisplay.textContent = "停止中";
-            updateCalculations();
+            totalSteps = 0; tempSteps = 0; isWalking = false; stepTimes = []; stepCountDisplay.textContent = 0; walkStatusDisplay.textContent = "停止中"; updateCalculations();
         });
     </script>
 </body>
