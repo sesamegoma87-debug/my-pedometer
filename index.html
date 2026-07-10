@@ -3,14 +3,16 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Web歩数計 - 履歴保存版</title>
+    <title>Web歩数計 - カロリー・食べ物換算版</title>
     <style>
-        :root { --primary: #3498db; --success: #2ecc71; --danger: #e74c3c; --dark: #2c3e50; --bg: #f8f9fa; }
+        :root { --primary: #3498db; --success: #2ecc71; --danger: #e74c3c; --warning: #f1c40f; --dark: #2c3e50; --bg: #f8f9fa; }
         body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; text-align: center; background: var(--bg); color: var(--dark); margin: 0; padding: 20px 0; }
-        .box { background: white; margin: 15px auto; padding: 20px; width: 85%; max-width: 360px; border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.08); text-align: center; box-sizing: border-box; }
+        .box { background: white; margin: 15px auto; padding: 20px; width: 85%; max-width: 360px; border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.08); box-sizing: border-box; }
 
-        .count { font-size: 4rem; font-weight: bold; color: var(--success); line-height: 1.2; }
-        .distance { font-size: 3rem; font-weight: bold; color: var(--primary); line-height: 1.2; }
+        .count { font-size: 3.5rem; font-weight: bold; color: var(--success); line-height: 1.2; }
+        .distance { font-size: 2.5rem; font-weight: bold; color: var(--primary); line-height: 1.2; }
+        .calorie { font-size: 2.5rem; font-weight: bold; color: var(--danger); line-height: 1.2; }
+        .food-text { font-size: 1.2rem; font-weight: bold; color: #d35400; margin-top: 10px; }
         .status { font-size: 1rem; color: #7f8c8d; font-weight: bold; margin-top: 5px; }
 
         label { display: block; margin: 10px 0 5px; font-weight: bold; text-align: left; font-size: 0.85rem; color: #555; }
@@ -24,18 +26,15 @@
         .btn-save { background: #f39c12; }
         .btn-setting { background: var(--success); }
 
-        /* 履歴エリアのスタイル */
-        .history-list { text-align: left; margin-top: 15px; max-height: 200px; overflow-y: auto; }
+        .history-list { text-align: left; margin-top: 15px; max-height: 150px; overflow-y: auto; }
         .history-item { border-bottom: 1px solid #eee; padding: 8px 0; font-size: 0.9rem; }
         .history-date { font-weight: bold; color: #7f8c8d; }
         .history-data { display: flex; justify-content: space-between; margin-top: 4px; }
-        .history-bar { height: 6px; background: #e0e0e0; border-radius: 3px; margin-top: 4px; overflow: hidden; }
-        .history-bar-fill { height: 100%; background: var(--success); width: 0%; }
     </style>
 </head>
 <body>
 
-    <h1>歩数 ＆ 距離メーター</h1>
+    <h1>歩数 ＆ 健康メーター</h1>
 
     <div class="box">
         <h3 style="margin: 0 0 10px 0;">🏃‍♂️ 個人設定</h3>
@@ -44,6 +43,9 @@
 
         <label for="strideInput">歩幅 (cm):</label>
         <input type="number" id="strideInput" value="76">
+
+        <label for="weightInput">体重 (kg) ※カロリー計算用:</label>
+        <input type="number" id="weightInput" value="60">
 
         <button id="saveSettingBtn" class="btn-wide btn-setting">設定を保存</button>
     </div>
@@ -57,6 +59,12 @@
     <div class="box">
         <p style="margin:0; color:#7f8c8d; font-size: 0.9rem;">推定移動距離</p>
         <div class="distance" id="distanceDisplay">0 m</div>
+    </div>
+
+    <div class="box">
+        <p style="margin:0; color:#7f8c8d; font-size: 0.9rem;">消費カロリー</p>
+        <div class="calorie" id="calorieDisplay">0.0 kcal</div>
+        <div class="food-text" id="foodDisplay">消費した食べ物: まだありません</div>
 
         <button id="saveRecordBtn" class="btn-wide btn-save">📥 本日の記録を保存</button>
     </div>
@@ -68,8 +76,7 @@
 
     <div class="box">
         <h3 style="margin: 0 0 10px 0; text-align: left;">📊 過去の記録</h3>
-        <div class="history-list" id="historyList">
-            </div>
+        <div class="history-list" id="historyList"></div>
         <button id="clearHistoryBtn" class="btn-wide" style="background:#95a5a6; font-size:0.8rem; padding:6px;">履歴をすべて削除</button>
     </div>
 
@@ -82,144 +89,148 @@
         let isRising = false;
         let lastStepTime = 0;
 
-        // アルゴリズムの設定（調整済み高精度版）
+        // あなたが調整してくれた黄金比の数値！
         const THRESHOLD = 15;
         const MIN_INTERVAL = 500;
         const MAX_INTERVAL = 1400;
         const REQUIRED_STEPS = 5;
 
-        // UI要素の取得
+        // UI要素
         const heightInput = document.getElementById('heightInput');
         const strideInput = document.getElementById('strideInput');
+        const weightInput = document.getElementById('weightInput');
         const saveSettingBtn = document.getElementById('saveSettingBtn');
         const requestBtn = document.getElementById('requestBtn');
         const resetBtn = document.getElementById('resetBtn');
         const stepCountDisplay = document.getElementById('stepCount');
         const walkStatusDisplay = document.getElementById('walkStatus');
         const distanceDisplay = document.getElementById('distanceDisplay');
+        const calorieDisplay = document.getElementById('calorieDisplay');
+        const foodDisplay = document.getElementById('foodDisplay');
         const saveRecordBtn = document.getElementById('saveRecordBtn');
         const historyList = document.getElementById('historyList');
         const clearHistoryBtn = document.getElementById('clearHistoryBtn');
 
-        // --- 画面起動時の読み込み処理 ---
+        // 起動時の読み込み
         window.addEventListener('DOMContentLoaded', () => {
-            // 設定の読み込み
             const savedHeight = localStorage.getItem('user_height');
             const savedStride = localStorage.getItem('user_stride');
+            const savedWeight = localStorage.getItem('user_weight');
             if (savedHeight) heightInput.value = savedHeight;
             if (savedStride) strideInput.value = savedStride;
+            if (savedWeight) weightInput.value = savedWeight;
 
-            // 履歴の読み込み表示
             displayHistory();
         });
 
-        // 身長から歩幅を自動計算
         heightInput.addEventListener('input', () => {
             const height = parseFloat(heightInput.value);
-            if (!isNaN(height)) {
-                strideInput.value = Math.round(height * 0.45);
-            }
+            if (!isNaN(height)) { strideInput.value = Math.round(height * 0.45); }
         });
 
-        // 設定の保存
         saveSettingBtn.addEventListener('click', () => {
             localStorage.setItem('user_height', heightInput.value);
             localStorage.setItem('user_stride', strideInput.value);
+            localStorage.setItem('user_weight', weightInput.value);
             alert('設定を保存しました！');
-            updateDistance();
+            updateCalculations();
         });
 
-        // --- 距離の計算 ＆ 表示更新 ---
-        function updateDistance() {
+        // --- 距離・カロリー・食べ物の総合計算ロジック ---
+        function updateCalculations() {
             const stride = parseFloat(strideInput.value) || 70;
-            const distanceCm = totalSteps * stride;
-            const distanceM = distanceCm / 100;
+            const weight = parseFloat(weightInput.value) || 60;
 
+            // ① 距離計算
+            const distanceM = (totalSteps * stride) / 100;
             if (distanceM >= 1000) {
                 distanceDisplay.textContent = (distanceM / 1000).toFixed(2) + " km";
             } else {
                 distanceDisplay.textContent = distanceM.toFixed(1) + " m";
             }
+
+            // ② カロリー計算 (簡易式: 体重 * 歩数 * 0.0005 * 1.05)
+            const calories = weight * totalSteps * 0.0005 * 1.05;
+            calorieDisplay.textContent = calories.toFixed(1) + " kcal";
+
+            // ③ 食べ物換算ロジック
+            updateFoodExchange(calories);
+        }
+
+        function updateFoodExchange(calories) {
+            if (calories === 0) {
+                foodDisplay.textContent = "消費した食べ物: まだありません";
+                return;
+            }
+
+            // 食べ物のカロリー定義
+            const foodTarget = { name: "おにぎり", kcal: 200, icon: "🍙" };
+
+            // カロリー量に応じて食べ物をステップアップさせる
+            let currentFood = { name: "イチゴ", kcal: 5, icon: "🍓" };
+            if (calories >= 200) { currentFood = { name: "おにぎり", kcal: 200, icon: "🍙" }; }
+            else if (calories >= 140) { currentFood = { name: "缶ビール", kcal: 140, icon: "🍺" }; }
+            else if (calories >= 80) { currentFood = { name: "バナナ", kcal: 80, icon: "🍌" }; }
+            else if (calories >= 40) { currentFood = { name: "クッキー", kcal: 40, icon: "🍪" }; }
+
+            const count = (calories / currentFood.kcal).toFixed(1);
+            foodDisplay.textContent = `消費換算: ${currentFood.icon}${currentFood.name} 約 ${count} 個分`;
         }
 
         // --- 記録の保存処理 ---
         saveRecordBtn.addEventListener('click', () => {
-            if (totalSteps === 0) {
-                alert('まだ歩数が0のため、記録できません。');
-                return;
-            }
+            if (totalSteps === 0) { alert('まだ歩数が0です。'); return; }
 
             const now = new Date();
             const dateStr = `${now.getFullYear()}/${now.getMonth()+1}/${now.getDate()} ${now.getHours()}:${String(now.getMinutes()).padStart(2,'0')}`;
+            const weight = parseFloat(weightInput.value) || 60;
+            const calories = (weight * totalSteps * 0.0005 * 1.05).toFixed(1);
 
-            const stride = parseFloat(strideInput.value) || 70;
-            const distanceM = ((totalSteps * stride) / 100).toFixed(1);
-
-            // 新しいレコードオブジェクト
             const newRecord = {
                 date: dateStr,
                 steps: totalSteps,
-                distance: distanceM
+                calories: calories
             };
 
-            // 既存の履歴を読み込んで追加
-            let history = JSON.parse(localStorage.getItem('pedometer_history')) || [];
-            history.unshift(newRecord); // 先頭に追加
-            localStorage.setItem('pedometer_history', JSON.stringify(history));
+            let history = JSON.parse(localStorage.getItem('pedometer_history2')) || [];
+            history.unshift(newRecord);
+            localStorage.setItem('pedometer_history2', JSON.stringify(history));
 
-            alert('本日の記録を保存しました！');
+            alert('記録を保存しました！');
             displayHistory();
         });
 
-        // 履歴の表示機能
         function displayHistory() {
             historyList.innerHTML = '';
-            const history = JSON.parse(localStorage.getItem('pedometer_history')) || [];
+            const history = JSON.parse(localStorage.getItem('pedometer_history2')) || [];
 
             if (history.length === 0) {
                 historyList.innerHTML = '<p style="color:#95a5a6; text-align:center;">記録がありません</p>';
                 return;
             }
 
-            // グラフの最大値の基準（1万歩を100%とする）
-            const maxStepGoal = 10000;
-
             history.forEach(item => {
                 const itemEl = document.createElement('div');
                 itemEl.className = 'history-item';
-
-                // グラフバーの比率計算
-                const barPercent = Math.min((item.steps / maxStepGoal) * 100, 100);
-
-                // 距離の単位調整
-                let distStr = item.distance + " m";
-                if (parseFloat(item.distance) >= 1000) {
-                    distStr = (parseFloat(item.distance) / 1000).toFixed(2) + " km";
-                }
-
                 itemEl.innerHTML = `
                     <div class="history-date">${item.date}</div>
                     <div class="history-data">
                         <span><strong>${item.steps}</strong> 歩</span>
-                        <span>${distStr}</span>
-                    </div>
-                    <div class="history-bar">
-                        <div class="history-bar-fill" style="width: ${barPercent}%"></div>
+                        <span style="color:var(--danger);">${item.calories} kcal</span>
                     </div>
                 `;
                 historyList.appendChild(itemEl);
             });
         }
 
-        // 履歴の全削除
         clearHistoryBtn.addEventListener('click', () => {
-            if (confirm('すべての履歴を削除してもよろしいですか？')) {
-                localStorage.removeItem('pedometer_history');
+            if (confirm('すべての履歴を削除しますか？')) {
+                localStorage.removeItem('pedometer_history2');
                 displayHistory();
             }
         });
 
-        // --- 加速度センサー計測ロジック ---
+        // --- センサー計測ロジック ---
         requestBtn.addEventListener('click', async () => {
             if (typeof DeviceMotionEvent !== 'undefined' && typeof DeviceMotionEvent.requestPermission === 'function') {
                 try {
@@ -260,12 +271,12 @@
                                 stepCountDisplay.textContent = totalSteps;
                                 walkStatusDisplay.textContent = "🏃‍♂️ 歩行中！";
                                 walkStatusDisplay.style.color = "#2ecc71";
-                                updateDistance();
+                                updateCalculations();
                             }
                         } else {
                             totalSteps++;
                             stepCountDisplay.textContent = totalSteps;
-                            updateDistance();
+                            updateCalculations();
                         }
                     }
                     isRising = false;
@@ -280,7 +291,7 @@
             totalSteps = 0; tempSteps = 0; isWalking = false;
             stepCountDisplay.textContent = 0;
             walkStatusDisplay.textContent = "停止中";
-            updateDistance();
+            updateCalculations();
         });
     </script>
 </body>
