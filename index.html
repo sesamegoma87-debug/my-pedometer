@@ -3,49 +3,223 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Web歩数計 - 高精度版</title>
+    <title>Web歩数計 - 履歴保存版</title>
     <style>
-        body { font-family: sans-serif; text-align: center; padding-top: 40px; background: #f4f7f6; color: #333; }
-        .box { background: white; margin: 20px auto; padding: 20px; width: 80%; max-width: 300px; border-radius: 10px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
-        .count { font-size: 5rem; font-weight: bold; color: #2ecc71; }
-        .status { font-size: 1.1rem; color: #7f8c8d; font-weight: bold; }
-        button { padding: 12px 24px; font-size: 1.1rem; cursor: pointer; background: #3498db; color: white; border: none; border-radius: 25px; margin: 10px; width: 150px; }
+        :root { --primary: #3498db; --success: #2ecc71; --danger: #e74c3c; --dark: #2c3e50; --bg: #f8f9fa; }
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; text-align: center; background: var(--bg); color: var(--dark); margin: 0; padding: 20px 0; }
+        .box { background: white; margin: 15px auto; padding: 20px; width: 85%; max-width: 360px; border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.08); text-align: center; box-sizing: border-box; }
+
+        .count { font-size: 4rem; font-weight: bold; color: var(--success); line-height: 1.2; }
+        .distance { font-size: 3rem; font-weight: bold; color: var(--primary); line-height: 1.2; }
+        .status { font-size: 1rem; color: #7f8c8d; font-weight: bold; margin-top: 5px; }
+
+        label { display: block; margin: 10px 0 5px; font-weight: bold; text-align: left; font-size: 0.85rem; color: #555; }
+        input { width: 100%; padding: 10px; font-size: 1rem; border: 1px solid #ccc; border-radius: 6px; text-align: center; box-sizing: border-box; }
+
+        button { padding: 12px 20px; font-size: 1rem; font-weight: bold; cursor: pointer; color: white; border: none; border-radius: 25px; margin: 6px; width: 140px; transition: 0.2s; }
+        button:active { transform: scale(0.98); }
+        #requestBtn { background: var(--primary); }
+        #resetBtn { background: var(--danger); }
+        .btn-wide { width: 100%; border-radius: 8px; margin: 10px 0 0 0; }
+        .btn-save { background: #f39c12; }
+        .btn-setting { background: var(--success); }
+
+        /* 履歴エリアのスタイル */
+        .history-list { text-align: left; margin-top: 15px; max-height: 200px; overflow-y: auto; }
+        .history-item { border-bottom: 1px solid #eee; padding: 8px 0; font-size: 0.9rem; }
+        .history-date { font-weight: bold; color: #7f8c8d; }
+        .history-data { display: flex; justify-content: space-between; margin-top: 4px; }
+        .history-bar { height: 6px; background: #e0e0e0; border-radius: 3px; margin-top: 4px; overflow: hidden; }
+        .history-bar-fill { height: 100%; background: var(--success); width: 0%; }
     </style>
 </head>
 <body>
 
-    <h1>高精度 歩数計</h1>
+    <h1>歩数 ＆ 距離メーター</h1>
 
     <div class="box">
-        <p>確定した歩数</p>
+        <h3 style="margin: 0 0 10px 0;">🏃‍♂️ 個人設定</h3>
+        <label for="heightInput">身長 (cm):</label>
+        <input type="number" id="heightInput" value="170">
+
+        <label for="strideInput">歩幅 (cm):</label>
+        <input type="number" id="strideInput" value="76">
+
+        <button id="saveSettingBtn" class="btn-wide btn-setting">設定を保存</button>
+    </div>
+
+    <div class="box">
+        <p style="margin:0; color:#7f8c8d; font-size: 0.9rem;">本日の歩数</p>
         <div class="count" id="stepCount">0</div>
         <div class="status" id="walkStatus">停止中</div>
     </div>
 
-    <button id="requestBtn">計測開始</button>
-    <button id="resetBtn" style="background: #e74c3c;">リセット</button>
+    <div class="box">
+        <p style="margin:0; color:#7f8c8d; font-size: 0.9rem;">推定移動距離</p>
+        <div class="distance" id="distanceDisplay">0 m</div>
+
+        <button id="saveRecordBtn" class="btn-wide btn-save">📥 本日の記録を保存</button>
+    </div>
+
+    <div>
+        <button id="requestBtn">計測開始</button>
+        <button id="resetBtn">リセット</button>
+    </div>
+
+    <div class="box">
+        <h3 style="margin: 0 0 10px 0; text-align: left;">📊 過去の記録</h3>
+        <div class="history-list" id="historyList">
+            </div>
+        <button id="clearHistoryBtn" class="btn-wide" style="background:#95a5a6; font-size:0.8rem; padding:6px;">履歴をすべて削除</button>
+    </div>
 
     <script>
-        let totalSteps = 0;       // 画面に表示する確定歩数
-        let tempSteps = 0;        // 歩き始めの「仮」の歩数カウント
-        let isWalking = false;     // 本当に歩いているかどうかのフラグ
+        let totalSteps = 0;
+        let tempSteps = 0;
+        let isWalking = false;
 
-        // ピーク検出用の変数
         let lastAcc = 9.8;
-        let isRising = id = false;
+        let isRising = false;
         let lastStepTime = 0;
 
-        // 【調整のキモ】
-        const THRESHOLD = 11.8;   // 歩行の山と認める最低の高さ（11.5〜12.5あたりで調整）
-        const MIN_INTERVAL = 300; // 1歩の最小間隔（ミリ秒）。早足でも0.3秒はかかる
-        const MAX_INTERVAL = 1200;// 1歩の最大間隔（ミリ秒）。これ以上空いたら「立ち止まった」とみなす
-        const REQUIRED_STEPS = 6; // 何歩連続で歩いたら本物と認めるか（JIS規格風）
+        // アルゴリズムの設定（調整済み高精度版）
+        const THRESHOLD = 11.8;
+        const MIN_INTERVAL = 300;
+        const MAX_INTERVAL = 1200;
+        const REQUIRED_STEPS = 6;
 
+        // UI要素の取得
+        const heightInput = document.getElementById('heightInput');
+        const strideInput = document.getElementById('strideInput');
+        const saveSettingBtn = document.getElementById('saveSettingBtn');
         const requestBtn = document.getElementById('requestBtn');
         const resetBtn = document.getElementById('resetBtn');
         const stepCountDisplay = document.getElementById('stepCount');
         const walkStatusDisplay = document.getElementById('walkStatus');
+        const distanceDisplay = document.getElementById('distanceDisplay');
+        const saveRecordBtn = document.getElementById('saveRecordBtn');
+        const historyList = document.getElementById('historyList');
+        const clearHistoryBtn = document.getElementById('clearHistoryBtn');
 
+        // --- 画面起動時の読み込み処理 ---
+        window.addEventListener('DOMContentLoaded', () => {
+            // 設定の読み込み
+            const savedHeight = localStorage.getItem('user_height');
+            const savedStride = localStorage.getItem('user_stride');
+            if (savedHeight) heightInput.value = savedHeight;
+            if (savedStride) strideInput.value = savedStride;
+
+            // 履歴の読み込み表示
+            displayHistory();
+        });
+
+        // 身長から歩幅を自動計算
+        heightInput.addEventListener('input', () => {
+            const height = parseFloat(heightInput.value);
+            if (!isNaN(height)) {
+                strideInput.value = Math.round(height * 0.45);
+            }
+        });
+
+        // 設定の保存
+        saveSettingBtn.addEventListener('click', () => {
+            localStorage.setItem('user_height', heightInput.value);
+            localStorage.setItem('user_stride', strideInput.value);
+            alert('設定を保存しました！');
+            updateDistance();
+        });
+
+        // --- 距離の計算 ＆ 表示更新 ---
+        function updateDistance() {
+            const stride = parseFloat(strideInput.value) || 70;
+            const distanceCm = totalSteps * stride;
+            const distanceM = distanceCm / 100;
+
+            if (distanceM >= 1000) {
+                distanceDisplay.textContent = (distanceM / 1000).toFixed(2) + " km";
+            } else {
+                distanceDisplay.textContent = distanceM.toFixed(1) + " m";
+            }
+        }
+
+        // --- 記録の保存処理 ---
+        saveRecordBtn.addEventListener('click', () => {
+            if (totalSteps === 0) {
+                alert('まだ歩数が0のため、記録できません。');
+                return;
+            }
+
+            const now = new Date();
+            const dateStr = `${now.getFullYear()}/${now.getMonth()+1}/${now.getDate()} ${now.getHours()}:${String(now.getMinutes()).padStart(2,'0')}`;
+
+            const stride = parseFloat(strideInput.value) || 70;
+            const distanceM = ((totalSteps * stride) / 100).toFixed(1);
+
+            // 新しいレコードオブジェクト
+            const newRecord = {
+                date: dateStr,
+                steps: totalSteps,
+                distance: distanceM
+            };
+
+            // 既存の履歴を読み込んで追加
+            let history = JSON.parse(localStorage.getItem('pedometer_history')) || [];
+            history.unshift(newRecord); // 先頭に追加
+            localStorage.setItem('pedometer_history', JSON.stringify(history));
+
+            alert('本日の記録を保存しました！');
+            displayHistory();
+        });
+
+        // 履歴の表示機能
+        function displayHistory() {
+            historyList.innerHTML = '';
+            const history = JSON.parse(localStorage.getItem('pedometer_history')) || [];
+
+            if (history.length === 0) {
+                historyList.innerHTML = '<p style="color:#95a5a6; text-align:center;">記録がありません</p>';
+                return;
+            }
+
+            // グラフの最大値の基準（1万歩を100%とする）
+            const maxStepGoal = 10000;
+
+            history.forEach(item => {
+                const itemEl = document.createElement('div');
+                itemEl.className = 'history-item';
+
+                // グラフバーの比率計算
+                const barPercent = Math.min((item.steps / maxStepGoal) * 100, 100);
+
+                // 距離の単位調整
+                let distStr = item.distance + " m";
+                if (parseFloat(item.distance) >= 1000) {
+                    distStr = (parseFloat(item.distance) / 1000).toFixed(2) + " km";
+                }
+
+                itemEl.innerHTML = `
+                    <div class="history-date">${item.date}</div>
+                    <div class="history-data">
+                        <span><strong>${item.steps}</strong> 歩</span>
+                        <span>${distStr}</span>
+                    </div>
+                    <div class="history-bar">
+                        <div class="history-bar-fill" style="width: ${barPercent}%"></div>
+                    </div>
+                `;
+                historyList.appendChild(itemEl);
+            });
+        }
+
+        // 履歴の全削除
+        clearHistoryBtn.addEventListener('click', () => {
+            if (confirm('すべての履歴を削除してもよろしいですか？')) {
+                localStorage.removeItem('pedometer_history');
+                displayHistory();
+            }
+        });
+
+        // --- 加速度センサー計測ロジック ---
         requestBtn.addEventListener('click', async () => {
             if (typeof DeviceMotionEvent !== 'undefined' && typeof DeviceMotionEvent.requestPermission === 'function') {
                 try {
@@ -64,10 +238,8 @@
                 if (!event.accelerationIncludingGravity) return;
                 const acc = event.accelerationIncludingGravity;
                 const currentAcc = Math.sqrt(acc.x * acc.x + acc.y * acc.y + acc.z * acc.z);
-
                 const currentTime = Date.now();
 
-                // 最後の一歩から時間が経ちすぎていたら、歩行状態をリセット
                 if (currentTime - lastStepTime > MAX_INTERVAL) {
                     tempSteps = 0;
                     isWalking = false;
@@ -75,39 +247,32 @@
                     walkStatusDisplay.style.color = "#7f8c8d";
                 }
 
-                // --- ピーク（波の頂点）の検出ロジック ---
-                // 値が「上がって、下がった」の反転ポイントを見つける
                 if (currentAcc < lastAcc && isRising) {
-                    // かつ、その頂点が「しきい値」を超えており、前回の1歩から適切な時間が経っているか
                     if (lastAcc > THRESHOLD && (currentTime - lastStepTime) > MIN_INTERVAL) {
-
-                        tempSteps++; // まず仮カウントを増やす
+                        tempSteps++;
                         lastStepTime = currentTime;
 
                         if (!isWalking) {
-                            // まだ歩行状態になっていない場合
                             walkStatusDisplay.textContent = `判定中... (${tempSteps}/${REQUIRED_STEPS})`;
-
-                            // 規定歩数（6歩）連続で歩いたら、本物の歩行と認定！
                             if (tempSteps >= REQUIRED_STEPS) {
                                 isWalking = true;
-                                totalSteps += tempSteps; // 溜まっていた仮歩数を一気に足す
+                                totalSteps += tempSteps;
                                 stepCountDisplay.textContent = totalSteps;
                                 walkStatusDisplay.textContent = "🏃‍♂️ 歩行中！";
                                 walkStatusDisplay.style.color = "#2ecc71";
+                                updateDistance();
                             }
                         } else {
-                            // すでに歩行状態なら、リアルタイムで1歩ずつ増やす
                             totalSteps++;
                             stepCountDisplay.textContent = totalSteps;
+                            updateDistance();
                         }
                     }
                     isRising = false;
                 } else if (currentAcc > lastAcc) {
                     isRising = true;
                 }
-
-                lastAcc = currentAcc; // 前回の値を保存
+                lastAcc = currentAcc;
             });
         }
 
@@ -115,6 +280,7 @@
             totalSteps = 0; tempSteps = 0; isWalking = false;
             stepCountDisplay.textContent = 0;
             walkStatusDisplay.textContent = "停止中";
+            updateDistance();
         });
     </script>
 </body>
