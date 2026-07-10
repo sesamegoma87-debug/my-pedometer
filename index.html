@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>センサーテスト</title>
+    <style>
+        body { font-family: sans-serif; text-align: center; padding-top: 50px; font-size: 1.2rem; }
+        .value { font-size: 2rem; font-weight: bold; color: #ff5722; margin: 20px 0; }
+        button { padding: 15px 30px; font-size: 1.2rem; cursor: pointer; background: #007bff; color: white; border: none; border-radius: 5px; }
+    </style>
+</head>
+<body>
+
+    <h1>加速度センサー テスト</h1>
+    <p>スマホを振ると数値が変わるかチェックします</p>
+
+    <button id="requestBtn">センサーを開始する</button>
+
+    <div>
+        <p>X軸（左右の揺れ）</p>
+        <div id="accX" class="value">0.00</div>
+        <p>Y軸（前後の揺れ）</p>
+        <div id="accY" class="value">0.00</div>
+        <p>Z軸（上下の揺れ）</p>
+        <div id="accZ" class="value">0.00</div>
+    </div>
+
+    <script>
+        const requestBtn = document.getElementById('requestBtn');
+        const accXDisplay = document.getElementById('accX');
+        const accYDisplay = document.getElementById('accY');
+        const accZDisplay = document.getElementById('accZ');
+
+        requestBtn.addEventListener('click', async () => {
+            // iOS (iPhone) のためのアクセス許可処理
+            if (typeof DeviceMotionEvent !== 'undefined' && typeof DeviceMotionEvent.requestPermission === 'function') {
+                try {
+                    const permissionState = await DeviceMotionEvent.requestPermission();
+                    if (permissionState === 'granted') {
+                        startTracking();
+                    } else {
+                        alert('許可が拒否されました');
+                    }
+                } catch (e) {
+                    alert('エラー: ' + e);
+                }
+            } else {
+                // Android や PC の場合
+                startTracking();
+            }
+        });
+
+        function startTracking() {
+            requestBtn.textContent = "計測中...";
+            requestBtn.disabled = true;
+
+            window.addEventListener('devicemotion', (event) => {
+                if (!event.accelerationIncludingGravity) return;
+
+                const acc = event.accelerationIncludingGravity;
+
+                // 小数点以下2桁にして画面に表示
+                accXDisplay.textContent = acc.x.toFixed(2);
+                accYDisplay.textContent = acc.y.toFixed(2);
+                accZDisplay.textContent = acc.z.toFixed(2);
+            });
+        }
+    </script>
+</body>
+</html>
